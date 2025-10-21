@@ -12,9 +12,9 @@ import "../styles/global.css";
 		<title>Pegar transcrição do Youtube</title>
 	</head>
 	<body
-		class="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 transition-colors duration-300 p-4 sm:p-8"
+		class="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 transition-colors duration-300 p-4 sm:p-8 flex flex-col"
 	>
-		<div class="max-w-2xl mx-auto space-y-8">
+		<div class="max-w-2xl mx-auto space-y-8 flex-1">
 			<header class="text-center pt-8">
 				<h1
 					class="text-4xl sm:text-5xl font-extrabold text-indigo-600 dark:text-indigo-400"
@@ -66,11 +66,16 @@ import "../styles/global.css";
 				</header>
 				<p
 					id="transcription"
-					class="whitespace-pre-wrap leading-relaxed p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-inner text-gray-800 dark:text-gray-200 min-h-[100px] overflow-auto max-h-[70vh]"
+					class="whitespace-pre-wrap leading-relaxed p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-inner text-gray-800 dark:text-gray-200 min-h-[100px]"
 				>
 				</p>
 			</div>
 		</div>
+		<footer
+			class="h-16 flex items-center justify-center text-sm text-gray-600 dark:text-gray-300"
+		>
+			<p>com 💜 MYK Brito</p>
+		</footer>
 	</body>
 
 	<script>
