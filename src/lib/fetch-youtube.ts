@@ -28,7 +28,12 @@ export async function fetchWatchHtml(videoId: string, fetchImpl = fetchText) {
  * @returns Resolves with the response text or throws on HTTP error.
  */
 export async function fetchText(url: string, headers = {}) {
-	const res = await fetch(url, { headers });
+	const defaultHeaders = {
+		"Accept-Language": "en-US,en;q=0.9",
+		"User-Agent":
+			"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+	};
+	const res = await fetch(url, { headers: { ...defaultHeaders, ...headers } });
 	if (!res.ok) throw new Error(String(res.status));
 	return res.text();
 }
@@ -120,7 +125,12 @@ export async function transcriptYt(args: TranscriptYtArgs) {
 			return null;
 		}
 		const xml = await fetch(picked.url, {
-			headers: { "Accept-Language": "en-US" },
+			headers: {
+				"Accept-Language": "en-US,en;q=0.9",
+				"User-Agent":
+					"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+				"Referer": `https://www.youtube.com/watch?v=${id}`,
+			},
 		}).then((r) => {
 			if (!r.ok) throw new Error(`yt_request_failed_${r.status}`);
 			return r.text();
@@ -167,7 +177,12 @@ export async function fetchInnertubePlayer(apiKey: string, videoId: string) {
 	const url = `https://www.youtube.com/youtubei/v1/player?key=${apiKey}`;
 	const res = await fetch(url, {
 		method: "POST",
-		headers: { "Content-Type": "application/json", "Accept-Language": "en-US" },
+		headers: {
+			"Content-Type": "application/json",
+			"Accept-Language": "en-US,en;q=0.9",
+			"User-Agent":
+				"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+		},
 		body: JSON.stringify({
 			context: { client: { clientName: "ANDROID", clientVersion: "20.10.38" } },
 			videoId,
@@ -381,6 +396,10 @@ export function assertPlayability(playabilityStatus: PlayabilityStatus) {
 	throw new Error("video_unplayable");
 }
 
+export interface LastError { category: string; message: string }
+export let lastError: LastError | null = null;
+
 export const logError = (category: string, message: string) => {
 	console.error(`[${category}] ${message}`);
+	lastError = { category, message };
 };

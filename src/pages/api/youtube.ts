@@ -1,5 +1,5 @@
 import type { APIRoute } from "astro";
-import { transcriptYt } from "../../lib/fetch-youtube";
+import { transcriptYt, lastError } from "../../lib/fetch-youtube";
 
 export const GET: APIRoute = async ({ request }) => {
 	const url = new URL(request.url);
@@ -26,7 +26,11 @@ export const GET: APIRoute = async ({ request }) => {
 
 	if (!textOnlyTranscription) {
 		return new Response(
-			JSON.stringify({ message: "No transcript available." }),
+			JSON.stringify({
+				message: "No transcript available.",
+				reason: lastError?.message ?? null,
+				category: lastError?.category ?? null,
+			}),
 			{
 				status: 404,
 				headers: {
