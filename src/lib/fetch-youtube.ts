@@ -91,6 +91,21 @@ export async function transcriptYt(args: TranscriptYtArgs) {
 			logError("invalid_url", "unable_to_extract_video_id");
 			return null;
 		}
+
+		// 1) Tentar primeiro via timedtext (evita bater na API do player quando já há legendas públicas)
+		const langs =
+			Array.isArray(args.preferredLanguages) && args.preferredLanguages.length
+				? args.preferredLanguages
+				: ["pt-BR", "pt", "en"];
+		for (const lang of langs) {
+			try {
+				const xml = await fetchTimedText(id, lang);
+				const segments = normalizeSegments(parseSegments(xml));
+				if (segments.length) return segments;
+			} catch {}
+		}
+
+		// 2) Caso não encontre por timedtext, seguir fluxo via player
 		const html = await fetchWatchHtml(id);
 		const apiKey = extractInnertubeApiKey(html);
 		if (!apiKey) {
@@ -116,7 +131,7 @@ export async function transcriptYt(args: TranscriptYtArgs) {
 		}
 		const picked = chooseTrack(
 			tracks,
-			args.preferredLanguages,
+			langs,
 			defaultCaptionTrackIndex,
 			defaultTranslationSourceTrackIndices,
 		);

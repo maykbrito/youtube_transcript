@@ -16,7 +16,7 @@ export const GET: APIRoute = async ({ request }) => {
 	// Try to list caption tracks for the video
 	const transcription = await transcriptYt({
 		videoUrl,
-		preferredLanguages: ["pt", "en"],
+		preferredLanguages: ["pt-BR", "pt", "en"],
 	});
 
 	let textOnlyTranscription = "";
