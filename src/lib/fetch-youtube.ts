@@ -179,12 +179,25 @@ export async function fetchInnertubePlayer(apiKey: string, videoId: string) {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
+			Accept: "application/json",
 			"Accept-Language": "en-US,en;q=0.9",
 			"User-Agent":
 				"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+			Origin: "https://www.youtube.com",
+			Referer: `https://www.youtube.com/watch?v=${videoId}`,
 		},
 		body: JSON.stringify({
-			context: { client: { clientName: "ANDROID", clientVersion: "20.10.38" } },
+			context: {
+				client: {
+					clientName: "WEB",
+					clientVersion: "2.20240722.07.00",
+					userAgent:
+						"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+					hl: "en",
+					gl: "US",
+					utcOffsetMinutes: 0,
+				},
+			},
 			videoId,
 		}),
 	});
@@ -249,7 +262,7 @@ export function parseSegments(xml: string) {
 export function parseTranscriptTexts(xml: string) {
 	const segments = [];
 	const textMatches = xml.matchAll(
-		/<text[^>]*start="([^"]+)"[^>]*dur="([^"]+)"[^>]*>([\s\S]*?)<\/text>/g,
+		/<text[^>]*start="([^"]+)"[^>]*dur="([^"]+)"[^>]*>([\s\s]*?)<\/text>/g,
 	);
 	for (const match of textMatches) {
 		const text = decodeHtml(String(match[3] || "")).trim();
@@ -403,3 +416,19 @@ export const logError = (category: string, message: string) => {
 	console.error(`[${category}] ${message}`);
 	lastError = { category, message };
 };
+
+export async function fetchTimedText(videoId: string, lang: string) {
+	const url = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${encodeURIComponent(
+		lang,
+	)}&fmt=srv3`;
+	const res = await fetch(url, {
+		headers: {
+			"Accept-Language": "en-US,en;q=0.9",
+			"User-Agent":
+				"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+			Referer: `https://www.youtube.com/watch?v=${videoId}`,
+		},
+	});
+	if (!res.ok) throw new Error(`yt_request_failed_${res.status}`);
+	return res.text();
+}
