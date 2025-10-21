@@ -1,16 +1,125 @@
 ---
-
+import "../styles/global.css";
 ---
 
-<html lang="en">
+<html lang="pt-BR">
 	<head>
 		<meta charset="utf-8" />
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 		<meta name="viewport" content="width=device-width" />
 		<meta name="generator" content={Astro.generator} />
-		<title>Astro</title>
+		<meta name="author" content="MYK Brito" />
+		<title>Pegar transcrição do Youtube</title>
 	</head>
-	<body>
-		<h1>Astro</h1>
+	<body
+		class="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 transition-colors duration-300 p-4 sm:p-8"
+	>
+		<div class="max-w-2xl mx-auto space-y-8">
+			<header class="text-center pt-8">
+				<h1
+					class="text-4xl sm:text-5xl font-extrabold text-indigo-600 dark:text-indigo-400"
+				>
+					Pegar transcrição do Youtube
+				</h1>
+			</header>
+
+			<p class="text-lg text-center text-gray-600 dark:text-gray-300">
+				Digite a URL de um vídeo do Youtube para obter sua transcrição.
+			</p>
+
+			<form
+				action="/api/youtube"
+				method="GET"
+				class="flex flex-col sm:flex-row gap-4 items-center"
+			>
+				<input
+					type="text"
+					name="videoUrl"
+					placeholder="Youtube video URL"
+					required
+					class="grow w-full sm:w-auto p-3 border border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 transition-colors duration-300"
+				/>
+				<button
+					type="submit"
+					class="w-full sm:w-auto px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 transition duration-150 ease-in-out"
+				>
+					Pegar transcrição
+				</button>
+			</form>
+
+			<div class="pt-6 space-y-4 hidden">
+				<header
+					class="flex justify-between border-gray-200 dark:border-gray-700 w-full border-b"
+				>
+					<h2
+						class="text-2xl font-semibold mb-4 text-gray-700 dark:text-gray-200"
+					>
+						Transcrição:
+					</h2>
+					<button
+						id="copyBtn"
+						type="button"
+						class="px-3 h-7 bg-indigo-600 text-white text-sm rounded shadow hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+					>
+						copiar
+					</button>
+				</header>
+				<p
+					id="transcription"
+					class="whitespace-pre-wrap leading-relaxed p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-inner text-gray-800 dark:text-gray-200 min-h-[100px] overflow-auto max-h-[70vh]"
+				>
+				</p>
+			</div>
+		</div>
 	</body>
+
+	<script>
+		const form = document.querySelector("form");
+		const transcription = document.querySelector(
+			"#transcription",
+		) as HTMLParagraphElement;
+
+		const transcriptionParent = transcription.parentElement as HTMLDivElement;
+
+		const getButton = document.querySelector(
+			"button[type='submit']",
+		) as HTMLButtonElement;
+
+		form?.addEventListener("submit", async (e) => {
+			e.preventDefault();
+
+			getButton.disabled = true;
+			getButton.textContent = "Carregando...";
+			getButton.classList.add("cursor-not-allowed");
+			getButton.classList.add("opacity-50");
+
+			const formData = new FormData(form);
+			const videoUrl = formData.get("videoUrl");
+			const response = await fetch(`/api/youtube?videoUrl=${videoUrl}`);
+			const data = await response.json();
+
+			transcriptionParent.classList.remove("hidden");
+
+			transcription.textContent = "No transcript available.";
+			if (data.transcription) {
+				transcription.textContent = data.transcription;
+			}
+
+			getButton.disabled = false;
+			getButton.textContent = "Pegar transcrição";
+			getButton.classList.remove("cursor-not-allowed");
+			getButton.classList.remove("opacity-50");
+
+			// Add copy button inside transcription box
+			const copyBtn = document.querySelector("#copyBtn") as HTMLButtonElement;
+			copyBtn.addEventListener("click", () => {
+				navigator.clipboard
+					.writeText(transcription.textContent || "")
+					.then(() => {
+						copyBtn.textContent = "Copiado!";
+						setTimeout(() => (copyBtn.textContent = "Copiar"), 1500);
+					});
+			});
+		});
+	</script>
 </html>
