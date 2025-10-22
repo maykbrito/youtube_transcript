@@ -378,16 +378,26 @@ export async function transcriptYt(args: TranscriptYtArgs) {
 				const xmlManual = await fetchTimedText(id, lang);
 				let segments = normalizeSegments(parseSegments(xmlManual));
 				if (segments.length) return segments;
+				logError("no_captions", `no_segments_timedtext_manual_${lang}`);
 				// ASR
 				const xmlAsr = await fetchTimedText(id, lang, "asr");
 				segments = normalizeSegments(parseSegments(xmlAsr));
 				if (segments.length) return segments;
-			} catch {}
+				logError("no_captions", `no_segments_timedtext_asr_${lang}`);
+			} catch (err) {
+				const msg = err instanceof Error ? String(err.message) : "";
+				logError(
+					msg.includes("yt_request_failed_") ? "network_error" : "other_error",
+					msg || `timedtext_fetch_failed_${lang}`,
+				);
+			}
 		}
 
 		// 2) Tentar extrair tracks do HTML da watch page sem usar player
 		const html = await fetchWatchHtml(id);
 		const htmlTracks = extractTracksFromWatchHtml(html);
+		if (!Array.isArray(htmlTracks) || !htmlTracks.length)
+			logError("no_captions", "no_tracks_from_watch_html");
 		if (Array.isArray(htmlTracks) && htmlTracks.length) {
 			const picked = chooseTrack(htmlTracks as CaptionTrack[], langs);
 			if (picked) {
@@ -404,6 +414,9 @@ export async function transcriptYt(args: TranscriptYtArgs) {
 				});
 				const segments = normalizeSegments(parseSegments(xml));
 				if (segments.length) return segments;
+				logError("no_captions", `no_segments_from_html_baseurl_${picked.lang}`);
+			} else {
+				logError("no_captions", "no_suitable_track_from_html");
 			}
 		}
 
