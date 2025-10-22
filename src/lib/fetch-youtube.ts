@@ -31,7 +31,7 @@ export async function fetchText(url: string, headers = {}) {
 	const defaultHeaders = {
 		"Accept-Language": "en-US,en;q=0.9",
 		"User-Agent":
-			"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+			"Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36",
 		Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 		Referer: "https://www.youtube.com/",
 		// Evita página de consentimento na UE
@@ -40,6 +40,14 @@ export async function fetchText(url: string, headers = {}) {
 	const res = await fetch(url, { headers: { ...defaultHeaders, ...headers } });
 	if (!res.ok) throw new Error(String(res.status));
 	return res.text();
+}
+
+// Helper para construir Accept-Language coerente com o idioma alvo
+function buildAcceptLanguage(lang: string) {
+	const l = (lang || "en-US").toLowerCase();
+	if (l.startsWith("pt")) return "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7";
+	if (l.startsWith("en")) return "en-US,en;q=0.9";
+	return `${lang},en-US;q=0.8,en;q=0.7`;
 }
 
 /**
@@ -95,7 +103,9 @@ interface CaptionTrack {
 }
 
 // Tenta extrair captionTracks diretamente do HTML do watch page
-export function extractTracksFromWatchHtml(html: string): CaptionTrack[] | null {
+export function extractTracksFromWatchHtml(
+	html: string,
+): CaptionTrack[] | null {
 	try {
 		const m = html.match(/ytInitialPlayerResponse\s*=\s*(\{[\s\S]*?\});/);
 		if (!m) return null;
@@ -124,22 +134,31 @@ export function extractInnertubeApiKey(html: string) {
  * Calls the YouTube Innertube player endpoint and returns JSON.
  * @param apiKey The Innertube API key.
  * @param videoId The YouTube video ID.
+ * @param hl UI language hint (e.g., 'pt-BR').
+ * @param gl Region hint (e.g., 'BR').
  * @returns The parsed JSON response object.
  */
-export async function fetchInnertubePlayer(apiKey: string, videoId: string) {
+export async function fetchInnertubePlayer(
+	apiKey: string,
+	videoId: string,
+	hl: string,
+	gl: string,
+) {
 	const url = `https://www.youtube.com/youtubei/v1/player?key=${apiKey}`;
 	const res = await fetch(url, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
-			"Accept-Language": "en-US,en;q=0.9",
+			"Accept-Language": buildAcceptLanguage(hl || "en-US"),
 			"User-Agent":
-				"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+				"Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36",
 			Origin: "https://www.youtube.com",
 			Referer: `https://www.youtube.com/watch?v=${videoId}`,
 		},
 		body: JSON.stringify({
-			context: { client: { clientName: "ANDROID", clientVersion: "20.10.38" } },
+			context: {
+				client: { clientName: "ANDROID", clientVersion: "20.10.38", hl, gl },
+			},
 			videoId,
 		}),
 	});
@@ -351,7 +370,10 @@ export function assertPlayability(playabilityStatus: PlayabilityStatus) {
 	throw new Error("video_unplayable");
 }
 
-export interface LastError { category: string; message: string }
+export interface LastError {
+	category: string;
+	message: string;
+}
 export let lastError: LastError | null = null;
 
 export const logError = (category: string, message: string) => {
@@ -374,13 +396,14 @@ export async function transcriptYt(args: TranscriptYtArgs) {
 				: ["pt-BR", "pt", "en"];
 		for (const lang of langs) {
 			try {
+				const acceptLang = buildAcceptLanguage(lang);
 				// Manual
-				const xmlManual = await fetchTimedText(id, lang);
+				const xmlManual = await fetchTimedText(id, lang, undefined, acceptLang);
 				let segments = normalizeSegments(parseSegments(xmlManual));
 				if (segments.length) return segments;
 				logError("no_captions", `no_segments_timedtext_manual_${lang}`);
 				// ASR
-				const xmlAsr = await fetchTimedText(id, lang, "asr");
+				const xmlAsr = await fetchTimedText(id, lang, "asr", acceptLang);
 				segments = normalizeSegments(parseSegments(xmlAsr));
 				if (segments.length) return segments;
 				logError("no_captions", `no_segments_timedtext_asr_${lang}`);
@@ -401,12 +424,16 @@ export async function transcriptYt(args: TranscriptYtArgs) {
 		if (Array.isArray(htmlTracks) && htmlTracks.length) {
 			const picked = chooseTrack(htmlTracks as CaptionTrack[], langs);
 			if (picked) {
-				const xml = await fetch(picked.url, {
+				const acceptLang = buildAcceptLanguage(
+					picked.lang || langs[0] || "en-US",
+				);
+				const urlResolved = normalizeTimedtextUrl(picked.url);
+				const xml = await fetch(urlResolved, {
 					headers: {
-						"Accept-Language": "en-US,en;q=0.9",
+						"Accept-Language": acceptLang,
 						"User-Agent":
-							"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
-						"Referer": `https://www.youtube.com/watch?v=${id}`,
+							"Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36",
+						Referer: `https://www.youtube.com/watch?v=${id}`,
 					},
 				}).then((r) => {
 					if (!r.ok) throw new Error(`yt_request_failed_${r.status}`);
@@ -426,7 +453,9 @@ export async function transcriptYt(args: TranscriptYtArgs) {
 			logError("inaccessible", "innertube_api_key_not_found");
 			return null;
 		}
-		const data = await fetchInnertubePlayer(apiKey, id);
+		const hl = langs[0] || "en-US";
+		const gl = hl.toLowerCase().startsWith("pt") ? "BR" : "US";
+		const data = await fetchInnertubePlayer(apiKey, id, hl, gl);
 		assertPlayability(data?.playabilityStatus);
 		const tracks =
 			data?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
@@ -453,12 +482,14 @@ export async function transcriptYt(args: TranscriptYtArgs) {
 			logError("no_captions", "no_suitable_track_found");
 			return null;
 		}
-		const xml = await fetch(picked.url, {
+		const acceptLang = buildAcceptLanguage(picked.lang || hl);
+		const urlResolved = normalizeTimedtextUrl(picked.url);
+		const xml = await fetch(urlResolved, {
 			headers: {
-				"Accept-Language": "en-US,en;q=0.9",
+				"Accept-Language": acceptLang,
 				"User-Agent":
-					"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
-				"Referer": `https://www.youtube.com/watch?v=${id}`,
+					"Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36",
+				Referer: `https://www.youtube.com/watch?v=${id}`,
 			},
 		}).then((r) => {
 			if (!r.ok) throw new Error(`yt_request_failed_${r.status}`);
@@ -486,18 +517,32 @@ export async function transcriptYt(args: TranscriptYtArgs) {
 	}
 }
 
-export async function fetchTimedText(videoId: string, lang: string, kind?: "asr") {
+export async function fetchTimedText(
+	videoId: string,
+	lang: string,
+	kind?: "asr",
+	acceptLang?: string,
+) {
 	const url = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${encodeURIComponent(
 		lang,
 	)}${kind === "asr" ? "&kind=asr" : ""}&fmt=srv3`;
 	const res = await fetch(url, {
 		headers: {
-			"Accept-Language": "en-US,en;q=0.9",
+			"Accept-Language": acceptLang || buildAcceptLanguage(lang),
 			"User-Agent":
-				"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+				"Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36",
 			Referer: `https://www.youtube.com/watch?v=${videoId}`,
 		},
 	});
 	if (!res.ok) throw new Error(`yt_request_failed_${res.status}`);
 	return res.text();
+}
+
+// Normaliza URLs de caption baseUrl, garantindo absoluto para /api/timedtext
+function normalizeTimedtextUrl(u: string) {
+	if (!u) return u;
+	const clean = String(u).replace("&fmt=srv3", "");
+	if (clean.startsWith("http://") || clean.startsWith("https://")) return clean;
+	if (clean.startsWith("/")) return `https://www.youtube.com${clean}`;
+	return `https://www.youtube.com/${clean}`;
 }
