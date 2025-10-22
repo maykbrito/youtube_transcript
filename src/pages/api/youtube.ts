@@ -1,5 +1,5 @@
 import type { APIRoute } from "astro";
-import { transcriptYt, lastError } from "../../lib/fetch-youtube";
+import { lastError, transcriptYt } from "../../lib/fetch-youtube";
 
 export const GET: APIRoute = async ({ request }) => {
 	const url = new URL(request.url);
