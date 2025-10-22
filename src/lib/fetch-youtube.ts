@@ -84,90 +84,24 @@ export interface TranscriptSegment {
  * @param {TranscriptYtArgs} args The request payload with videoUrl and optional preferredLanguages.
  * @returns {Promise<TranscriptSegment[] | null>} A list of transcript segments or null when unavailable.
  */
-export async function transcriptYt(args: TranscriptYtArgs) {
+interface CaptionTrack {
+	kind: string;
+	languageCode: string;
+	baseUrl: string;
+}
+
+// Tenta extrair captionTracks diretamente do HTML do watch page
+export function extractTracksFromWatchHtml(html: string): CaptionTrack[] | null {
 	try {
-		const id = extractVideoId(args.videoUrl);
-		if (!id) {
-			logError("invalid_url", "unable_to_extract_video_id");
-			return null;
-		}
-
-		// 1) Tentar primeiro via timedtext (evita bater na API do player quando já há legendas públicas)
-		const langs =
-			Array.isArray(args.preferredLanguages) && args.preferredLanguages.length
-				? args.preferredLanguages
-				: ["pt-BR", "pt", "en"];
-		for (const lang of langs) {
-			try {
-				const xml = await fetchTimedText(id, lang);
-				const segments = normalizeSegments(parseSegments(xml));
-				if (segments.length) return segments;
-			} catch {}
-		}
-
-		// 2) Caso não encontre por timedtext, seguir fluxo via player
-		const html = await fetchWatchHtml(id);
-		const apiKey = extractInnertubeApiKey(html);
-		if (!apiKey) {
-			logError("inaccessible", "innertube_api_key_not_found");
-			return null;
-		}
-		const data = await fetchInnertubePlayer(apiKey, id);
-		assertPlayability(data?.playabilityStatus);
+		const m = html.match(/ytInitialPlayerResponse\s*=\s*(\{[\s\S]*?\});/);
+		if (!m) return null;
+		const jsonStr = m[1];
+		const data = JSON.parse(jsonStr);
 		const tracks =
 			data?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
-		const audioTracks =
-			data?.captions?.playerCaptionsTracklistRenderer?.audioTracks || [];
-		const defaultCaptionTrackIndex =
-			typeof audioTracks?.[0]?.defaultCaptionTrackIndex === "number"
-				? audioTracks[0].defaultCaptionTrackIndex
-				: undefined;
-		const defaultTranslationSourceTrackIndices =
-			data?.captions?.playerCaptionsTracklistRenderer
-				?.defaultTranslationSourceTrackIndices;
-		if (!Array.isArray(tracks) || tracks.length === 0) {
-			logError("no_captions", "no_caption_tracks_found");
-			return null;
-		}
-		const picked = chooseTrack(
-			tracks,
-			langs,
-			defaultCaptionTrackIndex,
-			defaultTranslationSourceTrackIndices,
-		);
-		if (!picked) {
-			logError("no_captions", "no_suitable_track_found");
-			return null;
-		}
-		const xml = await fetch(picked.url, {
-			headers: {
-				"Accept-Language": "en-US,en;q=0.9",
-				"User-Agent":
-					"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
-				"Referer": `https://www.youtube.com/watch?v=${id}`,
-			},
-		}).then((r) => {
-			if (!r.ok) throw new Error(`yt_request_failed_${r.status}`);
-			return r.text();
-		});
-		const segments = normalizeSegments(parseSegments(xml));
-		if (!segments.length) {
-			logError("no_captions", "no_segments_after_parsing");
-			return null;
-		}
-		return segments;
-	} catch (err) {
-		const msg = err instanceof Error ? String(err.message) : "";
-		if (msg.includes("yt_request_failed_") || msg === "ip_blocked")
-			logError("network_error", msg);
-		else if (
-			msg === "video_unavailable" ||
-			msg === "video_unplayable" ||
-			msg === "age_restricted" ||
-			msg === "request_blocked"
-		)
-			logError("inaccessible", msg);
-		else logError("other_error", msg || "unexpected_error");
+		if (Array.isArray(tracks) && tracks.length) return tracks as CaptionTrack[];
+		return null;
+	} catch {
 		return null;
 	}
 }
@@ -418,6 +352,115 @@ export const logError = (category: string, message: string) => {
 	console.error(`[${category}] ${message}`);
 	lastError = { category, message };
 };
+
+export async function transcriptYt(args: TranscriptYtArgs) {
+	try {
+		const id = extractVideoId(args.videoUrl);
+		if (!id) {
+			logError("invalid_url", "unable_to_extract_video_id");
+			return null;
+		}
+
+		// 1) Tentar primeiro via timedtext (evita bater na API do player quando já há legendas públicas)
+		const langs =
+			Array.isArray(args.preferredLanguages) && args.preferredLanguages.length
+				? args.preferredLanguages
+				: ["pt-BR", "pt", "en"];
+		for (const lang of langs) {
+			try {
+				const xml = await fetchTimedText(id, lang);
+				const segments = normalizeSegments(parseSegments(xml));
+				if (segments.length) return segments;
+			} catch {}
+		}
+
+		// 2) Tentar extrair tracks do HTML da watch page sem usar player
+		const html = await fetchWatchHtml(id);
+		const htmlTracks = extractTracksFromWatchHtml(html);
+		if (Array.isArray(htmlTracks) && htmlTracks.length) {
+			const picked = chooseTrack(htmlTracks as CaptionTrack[], langs);
+			if (picked) {
+				const xml = await fetch(picked.url, {
+					headers: {
+						"Accept-Language": "en-US,en;q=0.9",
+						"User-Agent":
+							"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+						"Referer": `https://www.youtube.com/watch?v=${id}`,
+					},
+				}).then((r) => {
+					if (!r.ok) throw new Error(`yt_request_failed_${r.status}`);
+					return r.text();
+				});
+				const segments = normalizeSegments(parseSegments(xml));
+				if (segments.length) return segments;
+			}
+		}
+
+		// 3) Caso não encontre por timedtext nem HTML, seguir fluxo via player
+		const apiKey = extractInnertubeApiKey(html);
+		if (!apiKey) {
+			logError("inaccessible", "innertube_api_key_not_found");
+			return null;
+		}
+		const data = await fetchInnertubePlayer(apiKey, id);
+		assertPlayability(data?.playabilityStatus);
+		const tracks =
+			data?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+		const audioTracks =
+			data?.captions?.playerCaptionsTracklistRenderer?.audioTracks || [];
+		const defaultCaptionTrackIndex =
+			typeof audioTracks?.[0]?.defaultCaptionTrackIndex === "number"
+				? audioTracks[0].defaultCaptionTrackIndex
+				: undefined;
+		const defaultTranslationSourceTrackIndices =
+			data?.captions?.playerCaptionsTracklistRenderer
+				?.defaultTranslationSourceTrackIndices;
+		if (!Array.isArray(tracks) || tracks.length === 0) {
+			logError("no_captions", "no_caption_tracks_found");
+			return null;
+		}
+		const picked = chooseTrack(
+			tracks,
+			langs,
+			defaultCaptionTrackIndex,
+			defaultTranslationSourceTrackIndices,
+		);
+		if (!picked) {
+			logError("no_captions", "no_suitable_track_found");
+			return null;
+		}
+		const xml = await fetch(picked.url, {
+			headers: {
+				"Accept-Language": "en-US,en;q=0.9",
+				"User-Agent":
+					"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+				"Referer": `https://www.youtube.com/watch?v=${id}`,
+			},
+		}).then((r) => {
+			if (!r.ok) throw new Error(`yt_request_failed_${r.status}`);
+			return r.text();
+		});
+		const segments = normalizeSegments(parseSegments(xml));
+		if (!segments.length) {
+			logError("no_captions", "no_segments_after_parsing");
+			return null;
+		}
+		return segments;
+	} catch (err) {
+		const msg = err instanceof Error ? String(err.message) : "";
+		if (msg.includes("yt_request_failed_") || msg === "ip_blocked")
+			logError("network_error", msg);
+		else if (
+			msg === "video_unavailable" ||
+			msg === "video_unplayable" ||
+			msg === "age_restricted" ||
+			msg === "request_blocked"
+		)
+			logError("inaccessible", msg);
+		else logError("other_error", msg || "unexpected_error");
+		return null;
+	}
+}
 
 export async function fetchTimedText(videoId: string, lang: string) {
 	const url = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${encodeURIComponent(
