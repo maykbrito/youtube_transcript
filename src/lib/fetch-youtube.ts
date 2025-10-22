@@ -32,6 +32,10 @@ export async function fetchText(url: string, headers = {}) {
 		"Accept-Language": "en-US,en;q=0.9",
 		"User-Agent":
 			"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+		Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+		Referer: "https://www.youtube.com/",
+		// Evita página de consentimento na UE
+		Cookie: "CONSENT=YES+",
 	};
 	const res = await fetch(url, { headers: { ...defaultHeaders, ...headers } });
 	if (!res.ok) throw new Error(String(res.status));
@@ -131,6 +135,8 @@ export async function fetchInnertubePlayer(apiKey: string, videoId: string) {
 			"Accept-Language": "en-US,en;q=0.9",
 			"User-Agent":
 				"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+			Origin: "https://www.youtube.com",
+			Referer: `https://www.youtube.com/watch?v=${videoId}`,
 		},
 		body: JSON.stringify({
 			context: { client: { clientName: "ANDROID", clientVersion: "20.10.38" } },
@@ -368,8 +374,13 @@ export async function transcriptYt(args: TranscriptYtArgs) {
 				: ["pt-BR", "pt", "en"];
 		for (const lang of langs) {
 			try {
-				const xml = await fetchTimedText(id, lang);
-				const segments = normalizeSegments(parseSegments(xml));
+				// Manual
+				const xmlManual = await fetchTimedText(id, lang);
+				let segments = normalizeSegments(parseSegments(xmlManual));
+				if (segments.length) return segments;
+				// ASR
+				const xmlAsr = await fetchTimedText(id, lang, "asr");
+				segments = normalizeSegments(parseSegments(xmlAsr));
 				if (segments.length) return segments;
 			} catch {}
 		}
@@ -462,10 +473,10 @@ export async function transcriptYt(args: TranscriptYtArgs) {
 	}
 }
 
-export async function fetchTimedText(videoId: string, lang: string) {
+export async function fetchTimedText(videoId: string, lang: string, kind?: "asr") {
 	const url = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${encodeURIComponent(
 		lang,
-	)}&fmt=srv3`;
+	)}${kind === "asr" ? "&kind=asr" : ""}&fmt=srv3`;
 	const res = await fetch(url, {
 		headers: {
 			"Accept-Language": "en-US,en;q=0.9",
